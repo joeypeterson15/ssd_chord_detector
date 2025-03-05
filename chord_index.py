@@ -20,11 +20,6 @@ ANNOT_ROOT = f'./{DATA_ROOT}/annotations_train'
 # NOTE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'G#', 'F#', 'A#']
 NOTE_LABELS = ['Note']
 
-
-
-# DF_RAW = df = pd.read_csv(f'{DATA_ROOT}/df.csv')
-# df = df[df['ImageID'].isin(df['ImageID'].unique().tolist())]
-
 label2target = {l:t+1 for t,l in enumerate(NOTE_LABELS)}
 label2target['background'] = 0
 target2label = {t:l for l,t in label2target.items()}
@@ -57,28 +52,11 @@ class OpenDataset(torch.utils.data.Dataset):
         self.w = 300
         self.h = 300
         # logger.info(f'{len(self)} items loaded')
-        
-
-        # load images and masks
-        # image_id = self.image_infos[ix]
-        # img_path = find(image_id, self.files)
-        # img = Image.open(img_path).convert("RGB")
-        # img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255.
-        # data = df[df['ImageID'] == image_id]
-        # labels = data['LabelName'].values.tolist()
-        # data = data[['XMin','YMin','XMax','YMax']].values
-        # data[:,[0,2]] *= self.w
-        # data[:,[1,3]] *= self.h
-        # boxes = data.astype(np.uint32).tolist() # convert to absolute coordinates
-        # return img, boxes, labels
     def __getitem__(self, ix):
         # load images and masks
-        # image_id = self.image_infos[ix]
-        # img_path = find(image_id, self.files)
         img_path = self.images[ix] 
         img = Image.open(img_path).convert("RGB")
         img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255.
-        # data = df[df['ImageID'] == image_id]
         data_path = self.annotations[ix]
         with open(data_path, 'r') as file:
             data = xmltodict.parse(file.read())
@@ -95,17 +73,8 @@ class OpenDataset(torch.utils.data.Dataset):
                 box = [xMin, yMin, xMax, yMax]
                 # box = box.astype(np.uint32).tolist()
                 boxes.append(box)
-                # labels.append(obj['note'])
                 labels.append('Note')
-        
 
-        # data = data[['XMin','YMin','XMax','YMax']].values
-        # data[:,[0,2]] *= self.w
-        # data[:,[1,3]] *= self.h
-        # boxes = boxes.astype(np.uint32).tolist() # convert to absolute coordinates
-        # print(f'img: ', img)
-        # print(f'boxes: {boxes}')
-        # print(f'labels: {labels}')
         return img, boxes, labels
 
     def collate_fn(self, batch):
@@ -132,14 +101,6 @@ val_images = images[split:]
 
 train_annots = annotations[:split]
 val_annots = annotations[split:]
-
-
-# from sklearn.model_selection import train_test_split
-# trn_ids, val_ids = train_test_split(df.ImageID.unique(), test_size=0.1, random_state=99)
-# trn_df, val_df = df[df['ImageID'].isin(trn_ids)], df[df['ImageID'].isin(val_ids)]
-# print(len(trn_df), len(val_df))
-
-
 
 train_ds = OpenDataset(train_annots, train_images)
 test_ds = OpenDataset(val_annots, val_images)
@@ -168,14 +129,11 @@ def validate_batch(inputs, model, criterion):
     return loss
 
 
-n_epochs = 5
+n_epochs = 10
 
 model = SSD300(num_classes, device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 criterion = MultiBoxLoss(priors_cxcy=model.priors_cxcy, device=device)
-
-# log = Report(n_epochs=n_epochs)
-# logs_to_print = 5
 
 for epoch in range(n_epochs):
     LOSS = 0
@@ -190,17 +148,7 @@ for epoch in range(n_epochs):
     # for ix,inputs in enumerate(test_loader):
     #     loss = validate_batch(inputs, model, criterion)
 
-
-# image_paths = Glob(f'{DATA_ROOT}/images_train/*')
-# image_id = choose(test_ds.image_infos)
-# img_path = find(image_id, test_ds.files)
-# original_image = Image.open(img_path, mode='r')
-# original_image = original_image.convert('RGB')
-
-# image_paths = Glob(f'{DATA_ROOT}/images/*')
-for n in range(10):
-    # image_id = choose(test_ds.image_infos)
-    # img_path = find(image_id, test_ds.files)
+for n in range(20):
     img_path = images[n]
     original_image = Image.open(img_path, mode='r')
     # bbs, labels, scores = detect(original_image, model, min_score=0.9, max_overlap=0.5,top_k=200, device=device)
