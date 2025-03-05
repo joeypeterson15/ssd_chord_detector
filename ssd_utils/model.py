@@ -471,8 +471,11 @@ class SSD300(nn.Module):
             # Check for each class
             for c in range(1, self.n_classes):
                 # Keep only predicted boxes and scores where scores for this class are above the minimum score
+                print('predicted_scores for image ', i, ': ', predicted_scores[i])
                 class_scores = predicted_scores[i][:, c]  # (8732)
+                print('class scores: ', class_scores)
                 score_above_min_score = class_scores > min_score  # torch.uint8 (byte) tensor, for indexing
+                print('score above min score: ', score_above_min_score)
                 n_above_min_score = score_above_min_score.sum().item()
                 if n_above_min_score == 0:
                     continue
@@ -483,7 +486,7 @@ class SSD300(nn.Module):
                 class_scores, sort_ind = class_scores.sort(dim=0, descending=True)  # (n_qualified), (n_min_score)
                 class_decoded_locs = class_decoded_locs[sort_ind]  # (n_min_score, 4)
 
-                # Find the overlap between predicted boxes
+                # Find the overlap between (class) predicted boxes
                 overlap = find_jaccard_overlap(class_decoded_locs, class_decoded_locs)  # (n_qualified, n_min_score)
 
                 # Non-Maximum Suppression (NMS)
@@ -491,6 +494,7 @@ class SSD300(nn.Module):
                 # A torch.uint8 (byte) tensor to keep track of which predicted boxes to suppress
                 # 1 implies suppress, 0 implies don't suppress
                 suppress = torch.zeros((n_above_min_score), dtype=torch.uint8).to(self.device)  # (n_qualified)
+                print('suppress fresh: ', suppress)
 
                 # Consider each box in order of decreasing scores
                 for box in range(class_decoded_locs.size(0)):

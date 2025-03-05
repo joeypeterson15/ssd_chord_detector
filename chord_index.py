@@ -13,12 +13,13 @@ from ssd_utils.utils import *
 import pandas as pd
 import numpy as np
 import sklearn
+import albumentations as A
 
 DATA_ROOT = './chord_archive/'
 IMAGE_ROOT = f'{DATA_ROOT}/images_train'
 ANNOT_ROOT = f'./{DATA_ROOT}/annotations_train'
-# NOTE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'G#', 'F#', 'A#']
-NOTE_LABELS = ['Note']
+NOTE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'G#', 'F#', 'A#']
+# NOTE_LABELS = ['Note']
 
 label2target = {l:t+1 for t,l in enumerate(NOTE_LABELS)}
 label2target['background'] = 0
@@ -41,6 +42,28 @@ def preprocess_image(img):
     img = torch.tensor(img).permute(2,0,1)
     img = normalize(img)
     return img.to(device).float()
+
+annotations = sorted(glob.glob(ANNOT_ROOT+'/*'))
+images = sorted(glob.glob(IMAGE_ROOT+'/*'))
+
+
+
+# image_transform_pipeline = A.Compose([
+#     A.RandomCrop(width=256, height=256),
+#     A.RandomBrightnessContrast(p=1),
+#     A.Sharpen(p=1)
+# ])
+
+# def augment_images(images_dir, annots_dir):
+#     for ix, image in enumerate(images):
+#         pil_image = Image.open(image)
+#         image = np.array(pil_image)
+#         transformed_image = image_transform_pipeline(image)
+
+#         annot_data = image
+
+
+
 
 class OpenDataset(torch.utils.data.Dataset):
     w, h = 300, 300
@@ -73,7 +96,8 @@ class OpenDataset(torch.utils.data.Dataset):
                 box = [xMin, yMin, xMax, yMax]
                 # box = box.astype(np.uint32).tolist()
                 boxes.append(box)
-                labels.append('Note')
+                # labels.append('Note')
+                labels.append(obj['note'])
 
         return img, boxes, labels
 
@@ -90,8 +114,6 @@ class OpenDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.images)
 
-annotations = sorted(glob.glob(ANNOT_ROOT+'/*'))
-images = sorted(glob.glob(IMAGE_ROOT+'/*'))
 assert len(images) == len(annotations)
 TRAIN_PERCENT = .95
 split = int(len(images) * TRAIN_PERCENT)
@@ -152,7 +174,7 @@ for n in range(20):
     img_path = images[n]
     original_image = Image.open(img_path, mode='r')
     # bbs, labels, scores = detect(original_image, model, min_score=0.9, max_overlap=0.5,top_k=200, device=device)
-    bbs, labels, scores = detect(original_image, model, min_score=0.4, max_overlap=0.2,top_k=200, device=device)
+    bbs, labels, scores = detect(original_image, model, min_score=0.3, max_overlap=0.2,top_k=200, device=device)
     labels = [target2label[c.item()] for c in labels]
     label_with_conf = [f'{l} @ {s:.2f}' for l,s in zip(labels,scores)]
     print(bbs, label_with_conf)
