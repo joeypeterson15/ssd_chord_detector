@@ -316,6 +316,36 @@ class PredictionConvolutions(nn.Module):
                                    dim=1)  # (N, 8732, n_classes)
 
         return locs, classes_scores
+    
+class FretboardModel(nn.Module):
+    def __init__(self):
+        super(FretboardModel, self).__init__()
+
+        self.fretboard_convs = nn.Sequential( # input: conv4_3_feats (N, 512, 38, 38)
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(256),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 19x19
+            
+            nn.Conv2d(256, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(128),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 9x9 (approximately)
+            
+            nn.Conv2d(128, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(64)
+)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Always outputs 1x1 regardless of input size
+        self.fretboard_output_layer = nn.Linear(64, 4)
+
+    def forward(self, conv4_3_feats):
+        fretboard_feats = self.fretboard_convs(conv4_3_feats)
+        pooled = self.global_pool(fretboard_feats)
+        flattened = pooled.view(pooled.shape[0], -1)
+        output = self.fretboard_output_layer(flattened)
+        # print(f'output shape: {output.shape}')
+        return output
 
 class SSD300(nn.Module):
     """
@@ -330,14 +360,7 @@ class SSD300(nn.Module):
         self.base = VGGBase()
         self.aux_convs = AuxiliaryConvolutions()
         self.pred_convs = PredictionConvolutions(n_classes)
-        self.fretboard_convs = nn.Sequential( # (N, 512, 38, 38)
-            nn.Conv2d(512, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 32, kernel_size=3, padding=1)
-        )
-        self.fretboard_output_layer = nn.Linear(32, 4)
+        self.fretboard_convs = FretboardModel()
 
         # Since lower level features (conv4_3_feats) have considerably larger scales, we take the L2 norm and rescale
         # Rescale factor is initially set at 20, but is learned for each channel during back-prop
@@ -374,12 +397,9 @@ class SSD300(nn.Module):
         # locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats,
         #                                        conv11_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
         locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
+        fretboard_loc = self.fretboard_convs(conv4_3_feats)
 
-        fretboard_feats = self.fretboard_convs(conv4_3_feats)
-        flattened = fretboard_feats.squeeze(-1).squeeze(-1)
-        fretboard_box = self.fretboard_output_layer(flattened)
-
-        return locs, classes_scores, fretboard_box
+        return locs, classes_scores, fretboard_loc
 
     def create_prior_boxes(self):
         """
@@ -575,11 +595,12 @@ class MultiBoxLoss(nn.Module):
         self.alpha = alpha
 
         self.smooth_l1 = nn.L1Loss()
+        self.smooth_l1_fretboard = nn.L1Loss()
         self.cross_entropy = nn.CrossEntropyLoss(reduce=False)
         self.device = device
         self.to(device)
 
-    def forward(self, predicted_locs, predicted_scores, boxes, labels):
+    def forward(self, predicted_locs, predicted_scores, predicted_fretboard_loc, boxes, labels, fretboard_loc):
         """
         Forward propagation.
 
@@ -674,6 +695,12 @@ class MultiBoxLoss(nn.Module):
         # As in the paper, averaged over positive priors only, although computed over both positive and hard-negative priors
         conf_loss = (conf_loss_hard_neg.sum() + conf_loss_pos.sum()) / n_positives.sum().float()  # (), scalar
 
+        # print(f'fretboard predictions: {predicted_fretboard_loc}')
+        # print(f'fretboard predictions shape: {predicted_fretboard_loc.shape}')
+        # print(f'fretboard gt boxes: {fretboard_loc}')
+        # print(f'fretboard gt boxes shape: {fretboard_loc.shape}')
+
+        fretboard_loss = self.smooth_l1_fretboard(predicted_fretboard_loc, fretboard_loc)
         # TOTAL LOSS
 
-        return conf_loss + self.alpha * loc_loss
+        return conf_loss + self.alpha * loc_loss + fretboard_loss

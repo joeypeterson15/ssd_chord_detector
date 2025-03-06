@@ -18,18 +18,22 @@ normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
 
 def detect(original_image, model, min_score, max_overlap, top_k, device, suppress=None):
     image = normalize(to_tensor(resize(original_image))).to(device)
-    regr_, clss_ = model(image[None])
+    regr_, clss_, pred_fretboard_loc = model(image[None])
     boxes, labels, confs = model.detect_objects(regr_, clss_,
                                                 min_score=min_score,
                                                 max_overlap=max_overlap, top_k=top_k)
     boxes = boxes[0].to('cpu')
     confs = [s.item() for s in confs[0]]
     original_dims = torch.FloatTensor([original_image.width, original_image.height, original_image.width, original_image.height])[None]
+    fretboard_box = torch.sqrt(torch.square(pred_fretboard_loc[0]))
+    print(f'predicted fretboard output: {pred_fretboard_loc}')
+    fretboard_box = fretboard_box * original_dims
+    fretboard_box = fretboard_box.cpu().detach().numpy()
     bbs = boxes * original_dims
     bbs = bbs.cpu().detach().numpy().astype(np.int16).tolist()
     # labels = [rev_label_map[l] for l in labels[0].to('cpu').tolist()]
     labels = labels[0]
-    return bbs, labels, confs
+    return bbs, labels, confs, fretboard_box
 
 if __name__ == '__main__':
     img_path = '/media/ssd/ssd data/VOC2007/JPEGImages/000001.jpg'

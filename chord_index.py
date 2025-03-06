@@ -101,16 +101,17 @@ class OpenDataset(torch.utils.data.Dataset):
 
     def collate_fn(self, batch):
         images, boxes, labels = [], [], []
-        fretboard_box = []
+        fretboard_boxes = []
         for item in batch:
             img, image_boxes, image_labels, fretboard = item
             img = preprocess_image(img)[None]
             images.append(img)
-            fretboard_box.append(torch.tensor(fretboard).float().to(device)/300.)
+            fretboard_boxes.append(torch.tensor(fretboard).float().to(device)/300.)
             boxes.append(torch.tensor(image_boxes).float().to(device)/300.)
             labels.append(torch.tensor([label2target[c] for c in image_labels]).long().to(device))
         images = torch.cat(images).to(device)
-        return images, boxes, labels, fretboard_box[0]
+        fretboard_boxes = torch.stack(fretboard_boxes)
+        return images, boxes, labels, fretboard_boxes
     def __len__(self):
         return len(self.images)
 
@@ -136,11 +137,20 @@ def train_batch(inputs, model, criterion, optimizer):
     N = len(train_loader)
     images, boxes, labels, fretboardbb = inputs
     _regr, _clss, _fretboardbb = model(images)
-    loss = criterion(_regr, _clss, boxes, labels)
+    ssd_loss = criterion(_regr, _clss, _fretboardbb, boxes, labels, fretboardbb)
+    # print('\n')
+    # print(f'fretboard_loss: ', fretboard_loss)
+    # print('\n')
+    # print(f'fretboard prediction: {_fretboardbb}')
+    # print('\n')
+    # print(f'fretboard bb: {fretboardbb}')
     optimizer.zero_grad()
-    loss.backward()
+    # fretboard_optimizer.zero_grad()
+    # fretboard_loss.backward()
+    ssd_loss.backward()
     optimizer.step()
-    return loss
+    # fretboard_optimizer.step()
+    return ssd_loss
     
 @torch.no_grad()
 def validate_batch(inputs, model, criterion):
@@ -150,10 +160,13 @@ def validate_batch(inputs, model, criterion):
     loss = criterion(_regr, _clss, boxes, labels)
     return loss
 
-n_epochs = 15
+n_epochs = 10
 
 model = SSD300(num_classes, device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+print(f'model parameters: {model.parameters()}')
+print(f'fretboard model parameters: {model.fretboard_convs.parameters()}')
+# fretboard_optimizer = torch.optim.Adam(model.freboard_convs.parameters(), lr=1e-3)
 criterion = MultiBoxLoss(priors_cxcy=model.priors_cxcy, device=device)
 
 for epoch in range(n_epochs):
@@ -169,12 +182,14 @@ for epoch in range(n_epochs):
     # for ix,inputs in enumerate(test_loader):
     #     loss = validate_batch(inputs, model, criterion)
 
-for n in range(10):
+for n in range(5):
     img_path = images[n]
     original_image = Image.open(img_path, mode='r')
     # bbs, labels, scores = detect(original_image, model, min_score=0.9, max_overlap=0.5,top_k=200, device=device)
-    bbs, labels, scores = detect(original_image, model, min_score=0.45, max_overlap=0.2,top_k=200, device=device)
+    bbs, labels, scores, fretboard_box = detect(original_image, model, min_score=0.45, max_overlap=0.2,top_k=200, device=device)
     labels = [target2label[c.item()] for c in labels]
     label_with_conf = [f'{l} @ {s:.2f}' for l,s in zip(labels,scores)]
     print(bbs, label_with_conf)
+    print(f'fretboard result: {fretboard_box}')
     show(original_image, bbs=bbs, texts=label_with_conf, text_sz=10)
+    show(original_image, bbs=fretboard_box)
