@@ -46,59 +46,52 @@ def preprocess_image(img):
 annotations = sorted(glob.glob(ANNOT_ROOT+'/*'))
 images = sorted(glob.glob(IMAGE_ROOT+'/*'))
 
-
-
-# image_transform_pipeline = A.Compose([
-#     A.RandomCrop(width=256, height=256),
-#     A.RandomBrightnessContrast(p=1),
-#     A.Sharpen(p=1)
-# ])
-
-# def augment_images(images_dir, annots_dir):
-#     for ix, image in enumerate(images):
-#         pil_image = Image.open(image)
-#         image = np.array(pil_image)
-#         transformed_image = image_transform_pipeline(image)
-
-#         annot_data = image
-
-
+augment_pipeline = A.Compose([
+    # A.RandomCrop(width=256, height=256),
+    A.RandomBrightnessContrast(p=0.4),
+    A.Sharpen(p=0.3)
+], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.6, label_fields=['class_labels']))
 
 
 class OpenDataset(torch.utils.data.Dataset):
     w, h = 300, 300
     def __init__(self, annotations, images):
-        # self.image_dir = image_dir
         self.images = images
-        # self.annot_root = annot_dir
         self.annotations = annotations
         self.w = 300
         self.h = 300
-        # logger.info(f'{len(self)} items loaded')
     def __getitem__(self, ix):
         # load images and masks
+        labels = []
+        boxes = []
         img_path = self.images[ix] 
-        img = Image.open(img_path).convert("RGB")
-        img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255.
+        img = np.array(Image.open(img_path))
         data_path = self.annotations[ix]
         with open(data_path, 'r') as file:
             data = xmltodict.parse(file.read())
-        labels = []
-        boxes = []
-        original_width = int(data['annotation']['size']['width'])
-        original_height = int(data['annotation']['size']['height'])
         for obj in data['annotation']['object']:
             if obj['category'] == 'finger':
-                xMin = (float(obj['bndbox']['xmin']) / original_width) * self.w
-                yMin = (float(obj['bndbox']['ymin']) / original_height) * self.h
-                xMax = (float(obj['bndbox']['xmax']) / original_width) * self.w
-                yMax = (float(obj['bndbox']['ymax']) / original_height) * self.h
+                xMin = (float(obj['bndbox']['xmin']))
+                yMin = (float(obj['bndbox']['ymin']))
+                xMax = (float(obj['bndbox']['xmax']))
+                yMax = (float(obj['bndbox']['ymax']))
                 box = [xMin, yMin, xMax, yMax]
-                # box = box.astype(np.uint32).tolist()
-                boxes.append(box)
-                # labels.append('Note')
                 labels.append(obj['note'])
+                boxes.append(box)
 
+
+        transformed = augment_pipeline(image=img, bboxes=np.array(boxes), class_labels=np.array(labels))
+        img = transformed['image']
+        boxes = transformed['bboxes']
+        labels = transformed['class_labels']
+        
+        img = Image.fromarray(img).convert("RGB")
+        img_size = list(img.size)
+    
+        boxes[:,[0,2]] *= self.w / img_size[0] # normalize and scale
+        boxes[:,[1,3]] *= self.h / img_size[1] # normalize and scale
+        
+        img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255. #resize image and normalize
         return img, boxes, labels
 
     def collate_fn(self, batch):
@@ -150,8 +143,7 @@ def validate_batch(inputs, model, criterion):
     loss = criterion(_regr, _clss, boxes, labels)
     return loss
 
-
-n_epochs = 10
+n_epochs = 15
 
 model = SSD300(num_classes, device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
@@ -170,11 +162,11 @@ for epoch in range(n_epochs):
     # for ix,inputs in enumerate(test_loader):
     #     loss = validate_batch(inputs, model, criterion)
 
-for n in range(20):
+for n in range(10):
     img_path = images[n]
     original_image = Image.open(img_path, mode='r')
     # bbs, labels, scores = detect(original_image, model, min_score=0.9, max_overlap=0.5,top_k=200, device=device)
-    bbs, labels, scores = detect(original_image, model, min_score=0.3, max_overlap=0.2,top_k=200, device=device)
+    bbs, labels, scores = detect(original_image, model, min_score=0.45, max_overlap=0.2,top_k=200, device=device)
     labels = [target2label[c.item()] for c in labels]
     label_with_conf = [f'{l} @ {s:.2f}' for l,s in zip(labels,scores)]
     print(bbs, label_with_conf)

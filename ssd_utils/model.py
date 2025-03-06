@@ -330,6 +330,13 @@ class SSD300(nn.Module):
         self.base = VGGBase()
         self.aux_convs = AuxiliaryConvolutions()
         self.pred_convs = PredictionConvolutions(n_classes)
+        self.fretboard_convs = nn.Sequential(
+            nn.Conv2d(2048, 512, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(256, 32, kernel_size=3, padding=1)  # Changed to 32 channels as per your output
+        )
 
         # Since lower level features (conv4_3_feats) have considerably larger scales, we take the L2 norm and rescale
         # Rescale factor is initially set at 20, but is learned for each channel during back-prop
