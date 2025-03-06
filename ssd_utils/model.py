@@ -330,13 +330,14 @@ class SSD300(nn.Module):
         self.base = VGGBase()
         self.aux_convs = AuxiliaryConvolutions()
         self.pred_convs = PredictionConvolutions(n_classes)
-        self.fretboard_convs = nn.Sequential(
-            nn.Conv2d(2048, 512, kernel_size=3, padding=1),
-            nn.ReLU(),
+        self.fretboard_convs = nn.Sequential( # (N, 512, 38, 38)
             nn.Conv2d(512, 256, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(256, 32, kernel_size=3, padding=1)  # Changed to 32 channels as per your output
+            nn.Conv2d(256, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 32, kernel_size=3, padding=1)
         )
+        self.fretboard_output_layer = nn.Linear(32, 4)
 
         # Since lower level features (conv4_3_feats) have considerably larger scales, we take the L2 norm and rescale
         # Rescale factor is initially set at 20, but is learned for each channel during back-prop
@@ -374,7 +375,11 @@ class SSD300(nn.Module):
         #                                        conv11_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
         locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
 
-        return locs, classes_scores
+        fretboard_feats = self.fretboard_convs(conv4_3_feats)
+        flattened = fretboard_feats.squeeze(-1).squeeze(-1)
+        fretboard_box = self.fretboard_output_layer(flattened)
+
+        return locs, classes_scores, fretboard_box
 
     def create_prior_boxes(self):
         """
@@ -478,11 +483,8 @@ class SSD300(nn.Module):
             # Check for each class
             for c in range(1, self.n_classes):
                 # Keep only predicted boxes and scores where scores for this class are above the minimum score
-                print('predicted_scores for image ', i, ': ', predicted_scores[i])
                 class_scores = predicted_scores[i][:, c]  # (8732)
-                print('class scores: ', class_scores)
                 score_above_min_score = class_scores > min_score  # torch.uint8 (byte) tensor, for indexing
-                print('score above min score: ', score_above_min_score)
                 n_above_min_score = score_above_min_score.sum().item()
                 if n_above_min_score == 0:
                     continue
@@ -501,7 +503,7 @@ class SSD300(nn.Module):
                 # A torch.uint8 (byte) tensor to keep track of which predicted boxes to suppress
                 # 1 implies suppress, 0 implies don't suppress
                 suppress = torch.zeros((n_above_min_score), dtype=torch.uint8).to(self.device)  # (n_qualified)
-                print('suppress fresh: ', suppress)
+                # print('suppress fresh: ', suppress)
 
                 # Consider each box in order of decreasing scores
                 for box in range(class_decoded_locs.size(0)):

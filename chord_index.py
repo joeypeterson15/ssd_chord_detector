@@ -47,7 +47,6 @@ annotations = sorted(glob.glob(ANNOT_ROOT+'/*'))
 images = sorted(glob.glob(IMAGE_ROOT+'/*'))
 
 augment_pipeline = A.Compose([
-    # A.RandomCrop(width=256, height=256),
     A.RandomBrightnessContrast(p=0.4),
     A.Sharpen(p=0.3)
 ], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.6, label_fields=['class_labels']))
@@ -64,20 +63,24 @@ class OpenDataset(torch.utils.data.Dataset):
         # load images and masks
         labels = []
         boxes = []
+        fretboard = []
         img_path = self.images[ix] 
         img = np.array(Image.open(img_path))
         data_path = self.annotations[ix]
         with open(data_path, 'r') as file:
             data = xmltodict.parse(file.read())
         for obj in data['annotation']['object']:
+            xMin = (float(obj['bndbox']['xmin']))
+            yMin = (float(obj['bndbox']['ymin']))
+            xMax = (float(obj['bndbox']['xmax']))
+            yMax = (float(obj['bndbox']['ymax']))
+            box = [xMin, yMin, xMax, yMax]
             if obj['category'] == 'finger':
-                xMin = (float(obj['bndbox']['xmin']))
-                yMin = (float(obj['bndbox']['ymin']))
-                xMax = (float(obj['bndbox']['xmax']))
-                yMax = (float(obj['bndbox']['ymax']))
-                box = [xMin, yMin, xMax, yMax]
                 labels.append(obj['note'])
                 boxes.append(box)
+            if obj['category'] == 'fretboard':
+                fretboard.append(np.array([xMin, yMin, xMax, yMax]))
+
 
 
         transformed = augment_pipeline(image=img, bboxes=np.array(boxes), class_labels=np.array(labels))
@@ -88,22 +91,26 @@ class OpenDataset(torch.utils.data.Dataset):
         img = Image.fromarray(img).convert("RGB")
         img_size = list(img.size)
     
+        fretboard[0][0:2] *= self.w / img_size[0]
+        fretboard[0][1:3] *= self.h / img_size[1]
         boxes[:,[0,2]] *= self.w / img_size[0] # normalize and scale
         boxes[:,[1,3]] *= self.h / img_size[1] # normalize and scale
         
         img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255. #resize image and normalize
-        return img, boxes, labels
+        return img, boxes, labels, fretboard[0]
 
     def collate_fn(self, batch):
         images, boxes, labels = [], [], []
+        fretboard_box = []
         for item in batch:
-            img, image_boxes, image_labels = item
+            img, image_boxes, image_labels, fretboard = item
             img = preprocess_image(img)[None]
             images.append(img)
+            fretboard_box.append(torch.tensor(fretboard).float().to(device)/300.)
             boxes.append(torch.tensor(image_boxes).float().to(device)/300.)
             labels.append(torch.tensor([label2target[c] for c in image_labels]).long().to(device))
         images = torch.cat(images).to(device)
-        return images, boxes, labels
+        return images, boxes, labels, fretboard_box[0]
     def __len__(self):
         return len(self.images)
 
@@ -127,8 +134,8 @@ test_loader = DataLoader(test_ds, batch_size=4, collate_fn=test_ds.collate_fn, d
 def train_batch(inputs, model, criterion, optimizer):
     model.train()
     N = len(train_loader)
-    images, boxes, labels = inputs
-    _regr, _clss = model(images)
+    images, boxes, labels, fretboardbb = inputs
+    _regr, _clss, _fretboardbb = model(images)
     loss = criterion(_regr, _clss, boxes, labels)
     optimizer.zero_grad()
     loss.backward()
