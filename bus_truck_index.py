@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch_snippets import *
 import glob
 from ssd_utils.model import SSD300, MultiBoxLoss
-from ssd_utils.detect import *
+from detect import *
 from ssd_utils.utils import *
 import pandas as pd
 import numpy as np

@@ -321,16 +321,16 @@ class FretboardModel(nn.Module):
     def __init__(self):
         super(FretboardModel, self).__init__()
 
-        self.fretboard_convs = nn.Sequential( # input: conv4_3_feats (N, 512, 38, 38)
+        self.fretboard_convs = nn.Sequential( # input: conv4_3_feats (N, 512, 38, 38), conv8_feats: (N, 512, 10, 10)
             nn.Conv2d(512, 256, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.BatchNorm2d(256),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 19x19
+            nn.MaxPool2d(kernel_size=2),
             
             nn.Conv2d(256, 128, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.BatchNorm2d(128),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 9x9 (approximately)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 5x5 (approximately)
             
             nn.Conv2d(128, 64, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -397,6 +397,7 @@ class SSD300(nn.Module):
         # locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats,
         #                                        conv11_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
         locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
+        # fretboard_loc = self.fretboard_convs(conv4_3_feats)
         fretboard_loc = self.fretboard_convs(conv4_3_feats)
 
         return locs, classes_scores, fretboard_loc
@@ -623,6 +624,8 @@ class MultiBoxLoss(nn.Module):
         for i in range(batch_size):
             n_objects = boxes[i].size(0)
 
+
+            # Finding the overlap between the ground truth boxes and the priors 
             overlap = find_jaccard_overlap(boxes[i],
                                            self.priors_xy)  # (n_objects, 8732)
 
