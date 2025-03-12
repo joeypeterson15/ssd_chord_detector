@@ -1,5 +1,6 @@
 import torch
 import collections, os, torch
+import torch.nn as nn
 from PIL import Image
 import xmltodict
 from torchvision import transforms
@@ -18,8 +19,7 @@ import albumentations as A
 DATA_ROOT = './chord_archive/'
 IMAGE_ROOT = f'{DATA_ROOT}/images_train'
 ANNOT_ROOT = f'./{DATA_ROOT}/annotations_train'
-NOTE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'G#', 'F#', 'A#']
-# NOTE_LABELS = ['Note']
+NOTE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'G#', 'F#', 'A#', 'fretboard']
 
 label2target = {l:t+1 for t,l in enumerate(NOTE_LABELS)}
 label2target['background'] = 0
@@ -47,9 +47,22 @@ annotations = sorted(glob.glob(ANNOT_ROOT+'/*'))
 images = sorted(glob.glob(IMAGE_ROOT+'/*'))
 
 augment_pipeline = A.Compose([
+    # A.RandomCrop(width=400, height=400, p=0.3),
+    A.Affine(scale=[0.5,2], translate_percent=[-0.05,0.05], shear=[-15,15], p=0.3),
     A.RandomBrightnessContrast(p=0.4),
     A.Sharpen(p=0.3)
-], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.6, label_fields=['class_labels']))
+], bbox_params=A.BboxParams(format='pascal_voc', min_area=1000, min_visibility=0.1, label_fields=['class_labels']))
+
+def transform(img, labels, boxes):
+        transformed = augment_pipeline(image=img, bboxes=np.array(boxes), class_labels=np.array(labels))
+        img = transformed['image']
+        boxes = transformed['bboxes']
+        labels = transformed['class_labels']
+
+        # print(f'post augment boxes: {boxes}')
+        # print(f'post augment labels: {labels}')
+
+        return img, boxes, labels
 
 
 class OpenDataset(torch.utils.data.Dataset):
@@ -63,7 +76,6 @@ class OpenDataset(torch.utils.data.Dataset):
         # load images and masks
         labels = []
         boxes = []
-        fretboard = []
         img_path = self.images[ix] 
         img = np.array(Image.open(img_path))
         data_path = self.annotations[ix]
@@ -79,39 +91,42 @@ class OpenDataset(torch.utils.data.Dataset):
                 labels.append(obj['note'])
                 boxes.append(box)
             if obj['category'] == 'fretboard':
-                fretboard.append(np.array(box))
+                labels.append('fretboard')
+                boxes.append(box)
 
+        # print(f'pre augment boxes: {boxes}')
+        # print(f'pre augment labels: {labels}')
+    
+        img, boxes, labels = transform(img, labels, boxes)
+        if len(labels) == 0:
+            return
 
-
-        transformed = augment_pipeline(image=img, bboxes=np.array(boxes), class_labels=np.array(labels))
-        img = transformed['image']
-        boxes = transformed['bboxes']
-        labels = transformed['class_labels']
-        
         img = Image.fromarray(img).convert("RGB")
         img_size = list(img.size)
-    
-        fretboard[0][0:2] *= self.w / img_size[0]
-        fretboard[0][1:3] *= self.h / img_size[1]
-        boxes[:,[0,2]] *= self.w / img_size[0] # normalize and scale
-        boxes[:,[1,3]] *= self.h / img_size[1] # normalize and scale
+
+        scale = [self.w / img_size[0], self.h / img_size[1],self.w / img_size[0], self.h / img_size[1]]
+
+        if boxes.ndim > 1:
+            boxes[:,[0,2]] *= self.w / img_size[0] # normalize and scale
+            boxes[:,[1,3]] *= self.h / img_size[1] # normalize and scale
+        else: boxes *= scale
         
         img = np.array(img.resize((self.w, self.h), resample=Image.BILINEAR))/255. #resize image and normalize
-        return img, boxes, labels, fretboard[0]
+        return img, boxes, labels
 
     def collate_fn(self, batch):
         images, boxes, labels = [], [], []
-        fretboard_boxes = []
         for item in batch:
-            img, image_boxes, image_labels, fretboard = item
+            if not item:
+                continue
+            img, image_boxes, image_labels = item
             img = preprocess_image(img)[None]
             images.append(img)
-            fretboard_boxes.append(torch.tensor(fretboard).float().to(device)/300.)
             boxes.append(torch.tensor(image_boxes).float().to(device)/300.)
             labels.append(torch.tensor([label2target[c] for c in image_labels]).long().to(device))
         images = torch.cat(images).to(device)
-        fretboard_boxes = torch.stack(fretboard_boxes)
-        return images, boxes, labels, fretboard_boxes
+        # fretboard_boxes = torch.stack(fretboard_boxes)
+        return images, boxes, labels
     def __len__(self):
         return len(self.images)
 
@@ -135,21 +150,19 @@ test_loader = DataLoader(test_ds, batch_size=4, collate_fn=test_ds.collate_fn, d
 def train_batch(inputs, model, criterion, optimizer):
     model.train()
     N = len(train_loader)
-    images, boxes, labels, fretboardbb = inputs
-    _regr, _clss, _fretboardbb = model(images)
-    ssd_loss = criterion(_regr, _clss, _fretboardbb, boxes, labels, fretboardbb)
-    # print('\n')
-    # print(f'fretboard_loss: ', fretboard_loss)
-    # print('\n')
-    # print(f'fretboard prediction: {_fretboardbb}')
-    # print('\n')
-    # print(f'fretboard bb: {fretboardbb}')
+    images, boxes, labels = inputs
+    _regr, _clss = model(images)
+    # _fretboardbb = fretboard_model(images)
+
+    ssd_loss = criterion(_regr, _clss, boxes, labels)
+    # fretboard_loss = fretboard_criterion(_fretboardbb, fretboardbb)
     optimizer.zero_grad()
     # fretboard_optimizer.zero_grad()
-    # fretboard_loss.backward()
     ssd_loss.backward()
+    # fretboard_loss.backward()
     optimizer.step()
     # fretboard_optimizer.step()
+    # return ssd_loss + fretboard_loss
     return ssd_loss
     
 @torch.no_grad()
@@ -160,14 +173,14 @@ def validate_batch(inputs, model, criterion):
     loss = criterion(_regr, _clss, boxes, labels)
     return loss
 
-n_epochs = 10
+n_epochs = 15
 
 model = SSD300(num_classes, device)
+# fretboard_model = FretboardModel()
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-print(f'model parameters: {model.parameters()}')
-print(f'fretboard model parameters: {model.fretboard_convs.parameters()}')
-# fretboard_optimizer = torch.optim.Adam(model.freboard_convs.parameters(), lr=1e-3)
+# fretboard_optimizer = torch.optim.Adam(fretboard_model.parameters(), lr=1e-4)
 criterion = MultiBoxLoss(priors_cxcy=model.priors_cxcy, device=device)
+# fretboard_criterion = nn.SmoothL1Loss()
 
 for epoch in range(n_epochs):
     LOSS = 0
@@ -182,14 +195,25 @@ for epoch in range(n_epochs):
     # for ix,inputs in enumerate(test_loader):
     #     loss = validate_batch(inputs, model, criterion)
 
-for n in range(5):
+transform = A.Compose([
+    # A.RandomCrop(width=256, height=256),
+    A.Affine(scale=[0.25,2], translate_percent=[-0.15,0.15], shear=[-5,5], p=0.3),
+    A.RandomBrightnessContrast(p=0.4),
+], seed=137, strict=True)
+
+for n in range(10, 20):
     img_path = images[n]
+    print('\n')
+    print('img path: ', img_path)
     original_image = Image.open(img_path, mode='r')
-    # bbs, labels, scores = detect(original_image, model, min_score=0.9, max_overlap=0.5,top_k=200, device=device)
-    bbs, labels, scores, fretboard_box = detect(original_image, model, min_score=0.45, max_overlap=0.2,top_k=200, device=device)
+    # print('pre augment:', original_image)
+    original_image = transform(image=np.array(original_image))
+    img = original_image['image']
+    # print('post augment:', original_image)
+    original_image = Image.fromarray(img).convert("RGB")
+    bbs, labels, scores = detect(original_image, model, min_score=0.45, max_overlap=0.2,top_k=200, device=device)
     labels = [target2label[c.item()] for c in labels]
     label_with_conf = [f'{l} @ {s:.2f}' for l,s in zip(labels,scores)]
     print(bbs, label_with_conf)
-    print(f'fretboard result: {fretboard_box}')
+    
     show(original_image, bbs=bbs, texts=label_with_conf, text_sz=10)
-    show(original_image, bbs=fretboard_box)

@@ -167,20 +167,20 @@ class AuxiliaryConvolutions(nn.Module):
         out = F.relu(self.conv8_2(out))  # (N, 512, 10, 10)
         conv8_2_feats = out  # (N, 512, 10, 10)
 
-        # out = F.relu(self.conv9_1(out))  # (N, 128, 10, 10)
-        # out = F.relu(self.conv9_2(out))  # (N, 256, 5, 5)
-        # conv9_2_feats = out  # (N, 256, 5, 5)
+        out = F.relu(self.conv9_1(out))  # (N, 128, 10, 10)
+        out = F.relu(self.conv9_2(out))  # (N, 256, 5, 5)
+        conv9_2_feats = out  # (N, 256, 5, 5)
 
-        # out = F.relu(self.conv10_1(out))  # (N, 128, 5, 5)
-        # out = F.relu(self.conv10_2(out))  # (N, 256, 3, 3)
-        # conv10_2_feats = out  # (N, 256, 3, 3)
+        out = F.relu(self.conv10_1(out))  # (N, 128, 5, 5)
+        out = F.relu(self.conv10_2(out))  # (N, 256, 3, 3)
+        conv10_2_feats = out  # (N, 256, 3, 3)
 
-        # out = F.relu(self.conv11_1(out))  # (N, 128, 3, 3)
-        # conv11_2_feats = F.relu(self.conv11_2(out))  # (N, 256, 1, 1)
+        out = F.relu(self.conv11_1(out))  # (N, 128, 3, 3)
+        conv11_2_feats = F.relu(self.conv11_2(out))  # (N, 256, 1, 1)
 
         # Higher-level feature maps
-        return conv8_2_feats
-        # return conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats
+        # return conv8_2_feats
+        return conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats
 
 class PredictionConvolutions(nn.Module):
     """
@@ -214,17 +214,17 @@ class PredictionConvolutions(nn.Module):
         self.loc_conv4_3 = nn.Conv2d(512, n_boxes['conv4_3'] * 4, kernel_size=3, padding=1)
         self.loc_conv7 = nn.Conv2d(1024, n_boxes['conv7'] * 4, kernel_size=3, padding=1)
         self.loc_conv8_2 = nn.Conv2d(512, n_boxes['conv8_2'] * 4, kernel_size=3, padding=1)
-        # self.loc_conv9_2 = nn.Conv2d(256, n_boxes['conv9_2'] * 4, kernel_size=3, padding=1)
-        # self.loc_conv10_2 = nn.Conv2d(256, n_boxes['conv10_2'] * 4, kernel_size=3, padding=1)
-        # self.loc_conv11_2 = nn.Conv2d(256, n_boxes['conv11_2'] * 4, kernel_size=3, padding=1)
+        self.loc_conv9_2 = nn.Conv2d(256, n_boxes['conv9_2'] * 4, kernel_size=3, padding=1)
+        self.loc_conv10_2 = nn.Conv2d(256, n_boxes['conv10_2'] * 4, kernel_size=3, padding=1)
+        self.loc_conv11_2 = nn.Conv2d(256, n_boxes['conv11_2'] * 4, kernel_size=3, padding=1)
 
         # Class prediction convolutions (predict classes in localization boxes)
         self.cl_conv4_3 = nn.Conv2d(512, n_boxes['conv4_3'] * n_classes, kernel_size=3, padding=1)
         self.cl_conv7 = nn.Conv2d(1024, n_boxes['conv7'] * n_classes, kernel_size=3, padding=1)
         self.cl_conv8_2 = nn.Conv2d(512, n_boxes['conv8_2'] * n_classes, kernel_size=3, padding=1)
-        # self.cl_conv9_2 = nn.Conv2d(256, n_boxes['conv9_2'] * n_classes, kernel_size=3, padding=1)
-        # self.cl_conv10_2 = nn.Conv2d(256, n_boxes['conv10_2'] * n_classes, kernel_size=3, padding=1)
-        # self.cl_conv11_2 = nn.Conv2d(256, n_boxes['conv11_2'] * n_classes, kernel_size=3, padding=1)
+        self.cl_conv9_2 = nn.Conv2d(256, n_boxes['conv9_2'] * n_classes, kernel_size=3, padding=1)
+        self.cl_conv10_2 = nn.Conv2d(256, n_boxes['conv10_2'] * n_classes, kernel_size=3, padding=1)
+        self.cl_conv11_2 = nn.Conv2d(256, n_boxes['conv11_2'] * n_classes, kernel_size=3, padding=1)
 
         # Initialize convolutions' parameters
         self.init_conv2d()
@@ -238,8 +238,8 @@ class PredictionConvolutions(nn.Module):
                 nn.init.xavier_uniform_(c.weight)
                 nn.init.constant_(c.bias, 0.)
 
-    def forward(self, conv4_3_feats, conv7_feats, conv8_2_feats):
-    # def forward(self, conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats):
+    # def forward(self, conv4_3_feats, conv7_feats, conv8_2_feats):
+    def forward(self, conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats):
         """
         Forward propagation.
 
@@ -268,17 +268,17 @@ class PredictionConvolutions(nn.Module):
         l_conv8_2 = l_conv8_2.permute(0, 2, 3, 1).contiguous()  # (N, 10, 10, 24)
         l_conv8_2 = l_conv8_2.view(batch_size, -1, 4)  # (N, 600, 4)
 
-        # l_conv9_2 = self.loc_conv9_2(conv9_2_feats)  # (N, 24, 5, 5)
-        # l_conv9_2 = l_conv9_2.permute(0, 2, 3, 1).contiguous()  # (N, 5, 5, 24)
-        # l_conv9_2 = l_conv9_2.view(batch_size, -1, 4)  # (N, 150, 4)
+        l_conv9_2 = self.loc_conv9_2(conv9_2_feats)  # (N, 24, 5, 5)
+        l_conv9_2 = l_conv9_2.permute(0, 2, 3, 1).contiguous()  # (N, 5, 5, 24)
+        l_conv9_2 = l_conv9_2.view(batch_size, -1, 4)  # (N, 150, 4)
 
-        # l_conv10_2 = self.loc_conv10_2(conv10_2_feats)  # (N, 16, 3, 3)
-        # l_conv10_2 = l_conv10_2.permute(0, 2, 3, 1).contiguous()  # (N, 3, 3, 16)
-        # l_conv10_2 = l_conv10_2.view(batch_size, -1, 4)  # (N, 36, 4)
+        l_conv10_2 = self.loc_conv10_2(conv10_2_feats)  # (N, 16, 3, 3)
+        l_conv10_2 = l_conv10_2.permute(0, 2, 3, 1).contiguous()  # (N, 3, 3, 16)
+        l_conv10_2 = l_conv10_2.view(batch_size, -1, 4)  # (N, 36, 4)
 
-        # l_conv11_2 = self.loc_conv11_2(conv11_2_feats)  # (N, 16, 1, 1)
-        # l_conv11_2 = l_conv11_2.permute(0, 2, 3, 1).contiguous()  # (N, 1, 1, 16)
-        # l_conv11_2 = l_conv11_2.view(batch_size, -1, 4)  # (N, 4, 4)
+        l_conv11_2 = self.loc_conv11_2(conv11_2_feats)  # (N, 16, 1, 1)
+        l_conv11_2 = l_conv11_2.permute(0, 2, 3, 1).contiguous()  # (N, 1, 1, 16)
+        l_conv11_2 = l_conv11_2.view(batch_size, -1, 4)  # (N, 4, 4)
 
         # Predict classes in localization boxes
         c_conv4_3 = self.cl_conv4_3(conv4_3_feats)  # (N, 4 * n_classes, 38, 38)
@@ -296,56 +296,62 @@ class PredictionConvolutions(nn.Module):
         c_conv8_2 = c_conv8_2.permute(0, 2, 3, 1).contiguous()  # (N, 10, 10, 6 * n_classes)
         c_conv8_2 = c_conv8_2.view(batch_size, -1, self.n_classes)  # (N, 600, n_classes)
 
-        # c_conv9_2 = self.cl_conv9_2(conv9_2_feats)  # (N, 6 * n_classes, 5, 5)
-        # c_conv9_2 = c_conv9_2.permute(0, 2, 3, 1).contiguous()  # (N, 5, 5, 6 * n_classes)
-        # c_conv9_2 = c_conv9_2.view(batch_size, -1, self.n_classes)  # (N, 150, n_classes)
+        c_conv9_2 = self.cl_conv9_2(conv9_2_feats)  # (N, 6 * n_classes, 5, 5)
+        c_conv9_2 = c_conv9_2.permute(0, 2, 3, 1).contiguous()  # (N, 5, 5, 6 * n_classes)
+        c_conv9_2 = c_conv9_2.view(batch_size, -1, self.n_classes)  # (N, 150, n_classes)
 
-        # c_conv10_2 = self.cl_conv10_2(conv10_2_feats)  # (N, 4 * n_classes, 3, 3)
-        # c_conv10_2 = c_conv10_2.permute(0, 2, 3, 1).contiguous()  # (N, 3, 3, 4 * n_classes)
-        # c_conv10_2 = c_conv10_2.view(batch_size, -1, self.n_classes)  # (N, 36, n_classes)
+        c_conv10_2 = self.cl_conv10_2(conv10_2_feats)  # (N, 4 * n_classes, 3, 3)
+        c_conv10_2 = c_conv10_2.permute(0, 2, 3, 1).contiguous()  # (N, 3, 3, 4 * n_classes)
+        c_conv10_2 = c_conv10_2.view(batch_size, -1, self.n_classes)  # (N, 36, n_classes)
 
-        # c_conv11_2 = self.cl_conv11_2(conv11_2_feats)  # (N, 4 * n_classes, 1, 1)
-        # c_conv11_2 = c_conv11_2.permute(0, 2, 3, 1).contiguous()  # (N, 1, 1, 4 * n_classes)
-        # c_conv11_2 = c_conv11_2.view(batch_size, -1, self.n_classes)  # (N, 4, n_classes)
+        c_conv11_2 = self.cl_conv11_2(conv11_2_feats)  # (N, 4 * n_classes, 1, 1)
+        c_conv11_2 = c_conv11_2.permute(0, 2, 3, 1).contiguous()  # (N, 1, 1, 4 * n_classes)
+        c_conv11_2 = c_conv11_2.view(batch_size, -1, self.n_classes)  # (N, 4, n_classes)
 
         # A total of 8732 boxes
         # Concatenate in this specific order (i.e. must match the order of the prior-boxes)
 
-        locs = torch.cat([l_conv4_3, l_conv7, l_conv8_2], dim=1)  # (N, 8732, 4)
-        classes_scores = torch.cat([c_conv4_3, c_conv7, c_conv8_2],
+        locs = torch.cat([l_conv4_3, l_conv7, l_conv8_2, l_conv9_2, l_conv10_2, l_conv11_2], dim=1)  # (N, 8732, 4)
+        classes_scores = torch.cat([c_conv4_3, c_conv7, c_conv8_2, c_conv9_2, c_conv10_2, c_conv11_2],
                                    dim=1)  # (N, 8732, n_classes)
 
         return locs, classes_scores
-    
-class FretboardModel(nn.Module):
-    def __init__(self):
-        super(FretboardModel, self).__init__()
 
-        self.fretboard_convs = nn.Sequential( # input: conv4_3_feats (N, 512, 38, 38), conv8_feats: (N, 512, 10, 10)
-            nn.Conv2d(512, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(256),
-            nn.MaxPool2d(kernel_size=2),
-            
-            nn.Conv2d(256, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(128),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 5x5 (approximately)
-            
-            nn.Conv2d(128, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(64)
-)
-        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Always outputs 1x1 regardless of input size
-        self.fretboard_output_layer = nn.Linear(64, 4)
+# class FretboardModel(nn.Module):
+#     def __init__(self):
+#         super(FretboardModel, self).__init__()
 
-    def forward(self, conv4_3_feats):
-        fretboard_feats = self.fretboard_convs(conv4_3_feats)
-        pooled = self.global_pool(fretboard_feats)
-        flattened = pooled.view(pooled.shape[0], -1)
-        output = self.fretboard_output_layer(flattened)
-        # print(f'output shape: {output.shape}')
-        return output
+#         self.load_pretrained_resnet()
+
+#         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Always outputs 1x1 regardless of input size
+#         self.fretboard_output_layer = nn.Linear(32, 4)
+
+#         self.bbox_head_fingers = nn.Sequential(
+#             nn.Conv2d(2048, 512, kernel_size=3, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(512, 256, kernel_size=3, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(256, 32, kernel_size=3, padding=1)  # Changed to 32 channels as per your output
+#         )
+
+#     def load_pretrained_resnet(self):
+#         resnet = torchvision.models.resnet50(pretrained=True)
+#         # Remove the avg pool and fc layers
+#         self.resnet = nn.Sequential(*list(resnet.children())[:-2])
+
+#         for param in self.resnet.parameters():
+#             param.requires_grad = False
+#         for param in list(self.resnet.parameters())[-10:]:
+#             param.requires_grad = True
+
+#     def forward(self, image):
+#         fretboard_base = self.resnet(image)
+#         fretboard_feats = self.bbox_head_fingers(fretboard_base)
+#         pooled = self.global_pool(fretboard_feats)
+#         flattened = pooled.view(pooled.shape[0], -1)
+#         output = self.fretboard_output_layer(flattened)
+#         output = torch.sigmoid(output)
+#         return output
 
 class SSD300(nn.Module):
     """
@@ -360,7 +366,7 @@ class SSD300(nn.Module):
         self.base = VGGBase()
         self.aux_convs = AuxiliaryConvolutions()
         self.pred_convs = PredictionConvolutions(n_classes)
-        self.fretboard_convs = FretboardModel()
+        # self.fretboard_convs = FretboardModel()
 
         # Since lower level features (conv4_3_feats) have considerably larger scales, we take the L2 norm and rescale
         # Rescale factor is initially set at 20, but is learned for each channel during back-prop
@@ -388,19 +394,17 @@ class SSD300(nn.Module):
         # (PyTorch autobroadcasts singleton dimensions during arithmetic)
 
         # Run auxiliary convolutions (higher level feature map generators)
-        conv8_2_feats = \
+
+        conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats = \
             self.aux_convs(conv7_feats)  # (N, 512, 10, 10),  (N, 256, 5, 5), (N, 256, 3, 3), (N, 256, 1, 1)
-        # conv8_2_feats, conv9_2_feats, conv10_2_feats, conv11_2_feats = \
-        #     self.aux_convs(conv7_feats)  # (N, 512, 10, 10),  (N, 256, 5, 5), (N, 256, 3, 3), (N, 256, 1, 1)
 
         # Run prediction convolutions (predict offsets w.r.t prior-boxes and classes in each resulting localization box)
-        # locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats,
-        #                                        conv11_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
-        locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
-        # fretboard_loc = self.fretboard_convs(conv4_3_feats)
-        fretboard_loc = self.fretboard_convs(conv4_3_feats)
+        locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats, conv9_2_feats, conv10_2_feats,
+                                               conv11_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
+        # locs, classes_scores = self.pred_convs(conv4_3_feats, conv7_feats, conv8_2_feats)  # (N, 8732, 4), (N, 8732, n_classes)
 
-        return locs, classes_scores, fretboard_loc
+
+        return locs, classes_scores
 
     def create_prior_boxes(self):
         """
@@ -410,30 +414,33 @@ class SSD300(nn.Module):
         """
         fmap_dims = {'conv4_3': 38,
                      'conv7': 19,
-                     'conv8_2': 10
+                     'conv8_2': 10,
+                     'conv9_2': 5,
+                     'conv10_2': 3,
+                     'conv11_2': 1
                      }
-
-        # obj_scales = {'conv4_3': 0.1,
-        #               'conv7': 0.2,
-        #               'conv8_2': 0.375,
-        #               'conv9_2': 0.55,
-        #               'conv10_2': 0.725,
-        #               'conv11_2': 0.9}
 
         obj_scales = {'conv4_3': 0.1,
                       'conv7': 0.2,
-                      'conv8_2': 0.375}
+                      'conv8_2': 0.375,
+                      'conv9_2': 0.55,
+                      'conv10_2': 0.725,
+                      'conv11_2': 0.9}
 
-        # aspect_ratios = {'conv4_3': [1., 2., 0.5],
-        #                  'conv7': [1., 2., 3., 0.5, .333],
-        #                  'conv8_2': [1., 2., 3., 0.5, .333],
-        #                  'conv9_2': [1., 2., 3., 0.5, .333],
-        #                  'conv10_2': [1., 2., 0.5],
-        #                  'conv11_2': [1., 2., 0.5]}
+        # obj_scales = {'conv4_3': 0.1,
+        #               'conv7': 0.2,
+        #               'conv8_2': 0.375}
 
         aspect_ratios = {'conv4_3': [1., 2., 0.5],
                          'conv7': [1., 2., 3., 0.5, .333],
-                         'conv8_2': [1., 2., 3., 0.5, .333]}
+                         'conv8_2': [1., 2., 3., 0.5, .333],
+                         'conv9_2': [1., 2., 3., 0.5, .333],
+                         'conv10_2': [1., 2., 0.5],
+                         'conv11_2': [1., 2., 0.5]}
+
+        # aspect_ratios = {'conv4_3': [1., 2., 0.5],
+        #                  'conv7': [1., 2., 3., 0.5, .333],
+        #                  'conv8_2': [1., 2., 3., 0.5, .333]}
 
         fmaps = list(fmap_dims.keys())
 
@@ -601,7 +608,7 @@ class MultiBoxLoss(nn.Module):
         self.device = device
         self.to(device)
 
-    def forward(self, predicted_locs, predicted_scores, predicted_fretboard_loc, boxes, labels, fretboard_loc):
+    def forward(self, predicted_locs, predicted_scores, boxes, labels):
         """
         Forward propagation.
 
@@ -628,6 +635,9 @@ class MultiBoxLoss(nn.Module):
             # Finding the overlap between the ground truth boxes and the priors 
             overlap = find_jaccard_overlap(boxes[i],
                                            self.priors_xy)  # (n_objects, 8732)
+            
+            # print(f'overlap: {overlap}')
+            # print(f'overlap size: {overlap.size}')
 
             # For each prior, find the object that has the maximum overlap
             overlap_for_each_prior, object_for_each_prior = overlap.max(dim=0)  # (8732)
@@ -703,7 +713,7 @@ class MultiBoxLoss(nn.Module):
         # print(f'fretboard gt boxes: {fretboard_loc}')
         # print(f'fretboard gt boxes shape: {fretboard_loc.shape}')
 
-        fretboard_loss = self.smooth_l1_fretboard(predicted_fretboard_loc, fretboard_loc)
+        # fretboard_loss = self.smooth_l1_fretboard(predicted_fretboard_loc, fretboard_loc)
         # TOTAL LOSS
 
-        return conf_loss + self.alpha * loc_loss + fretboard_loss
+        return conf_loss + self.alpha * loc_loss
