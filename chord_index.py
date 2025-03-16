@@ -148,7 +148,6 @@ test_loader = DataLoader(test_ds, batch_size=4, collate_fn=test_ds.collate_fn, d
 
 
 def train_batch(inputs, model, criterion, optimizer):
-    model.train()
     N = len(train_loader)
     images, boxes, labels = inputs
     _regr, _clss = model(images)
@@ -167,13 +166,12 @@ def train_batch(inputs, model, criterion, optimizer):
     
 @torch.no_grad()
 def validate_batch(inputs, model, criterion):
-    model.eval()
     images, boxes, labels = inputs
     _regr, _clss = model(images)
     loss = criterion(_regr, _clss, boxes, labels)
     return loss
 
-n_epochs = 15
+n_epochs = 25
 
 model = SSD300(num_classes, device)
 # fretboard_model = FretboardModel()
@@ -182,18 +180,30 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 criterion = MultiBoxLoss(priors_cxcy=model.priors_cxcy, device=device)
 # fretboard_criterion = nn.SmoothL1Loss()
 
+
+best_loss = float('inf')
 for epoch in range(n_epochs):
     LOSS = 0
+    model.train()
     print(f'epoch: {epoch + 1}')
     _n = len(train_loader)
     for ix, inputs in enumerate(train_loader):
         loss = train_batch(inputs, model, criterion, optimizer)
         LOSS += loss.item()
-
     print(f'loss: {LOSS}')
-    # _n = len(test_loader)
-    # for ix,inputs in enumerate(test_loader):
-    #     loss = validate_batch(inputs, model, criterion)
+
+    model.eval()
+    VAL_LOSS = 0
+    _n = len(test_loader)
+    for ix,inputs in enumerate(test_loader):
+        loss = validate_batch(inputs, model, criterion)
+        VAL_LOSS += loss.item()
+    
+    if VAL_LOSS < best_loss:
+        best_loss = VAL_LOSS
+        torch.save(model.state_dict(), './ssd_chord_model.pth')
+
+# torch.save(model.state_dict(), './saved_load_model.pth')
 
 transform = A.Compose([
     # A.RandomCrop(width=256, height=256),

@@ -317,42 +317,6 @@ class PredictionConvolutions(nn.Module):
 
         return locs, classes_scores
 
-# class FretboardModel(nn.Module):
-#     def __init__(self):
-#         super(FretboardModel, self).__init__()
-
-#         self.load_pretrained_resnet()
-
-#         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Always outputs 1x1 regardless of input size
-#         self.fretboard_output_layer = nn.Linear(32, 4)
-
-#         self.bbox_head_fingers = nn.Sequential(
-#             nn.Conv2d(2048, 512, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.Conv2d(512, 256, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.Conv2d(256, 32, kernel_size=3, padding=1)  # Changed to 32 channels as per your output
-#         )
-
-#     def load_pretrained_resnet(self):
-#         resnet = torchvision.models.resnet50(pretrained=True)
-#         # Remove the avg pool and fc layers
-#         self.resnet = nn.Sequential(*list(resnet.children())[:-2])
-
-#         for param in self.resnet.parameters():
-#             param.requires_grad = False
-#         for param in list(self.resnet.parameters())[-10:]:
-#             param.requires_grad = True
-
-#     def forward(self, image):
-#         fretboard_base = self.resnet(image)
-#         fretboard_feats = self.bbox_head_fingers(fretboard_base)
-#         pooled = self.global_pool(fretboard_feats)
-#         flattened = pooled.view(pooled.shape[0], -1)
-#         output = self.fretboard_output_layer(flattened)
-#         output = torch.sigmoid(output)
-#         return output
-
 class SSD300(nn.Module):
     """
     The SSD300 network - encapsulates the base VGG network, auxiliary, and prediction convolutions.
