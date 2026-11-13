@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Guitar annotation box creator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --finger: #c4342d;
+      --chord: #1f7a6b;
+      --fret: #c47b12;
+      --ink: #1c1c1c;
+      --line: #d7d7e0;
+      --bg: #f3f3f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: end;
+      padding: 14px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    input, select, button {
+      font: inherit;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    input[type="text"], input[type="number"], select {
+      padding: 6px 8px;
+      border: 1px solid #c8c8d2;
+      border-radius: 6px;
+      background: #fff;
+    }
+    input[type="number"] { width: 72px; }
+    #noteInput { width: 72px; }
+    #chordNameInput { width: 110px; }
+    #folderInput { width: 88px; }
+    .actions { display: flex; gap: 8px; margin-left: auto; }
+    button {
+      padding: 7px 12px;
+      border-radius: 6px;
+      border: 1px solid #b9b9c6;
+      background: #fff;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #163a5f;
+      color: #fff;
+      border-color: #163a5f;
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      padding: 16px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .actions { margin-left: 0; }
+    }
+    .stage {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      min-width: 0;
+    }
+    .hint { margin: 0 0 10px; color: #555; font-size: 14px; }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      background:
+        linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%),
+        linear-gradient(45deg, #eee 25%, #fafafa 25%, #fafafa 75%, #eee 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 12px 12px;
+      border-radius: 6px;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    aside textarea {
+      width: 100%;
+      height: 420px;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      line-height: 1.35;
+      resize: vertical;
+      background: #fff;
+    }
+    ul.boxes { list-style: none; margin: 10px 0 0; padding: 0; }
+    ul.boxes li {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 0;
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <label>Image
+      <input type="file" id="imageLoader" accept="image/*">
+    </label>
+    <label>Folder
+      <input type="text" id="folderInput" value="data" spellcheck="false">
+    </label>
+    <label>Category
+      <select id="categorySelect">
+        <option value="finger">finger</option>
+        <option value="fretboard">fretboard</option>
+        <option value="chord_shape">chord_shape</option>
+      </select>
+    </label>
+    <div id="fingerFields" style="display:flex; gap:12px; align-items:end;">
+      <label>Finger ID
+        <input type="number" id="fingerIdInput" value="1" min="1" max="5">
+      </label>
+      <label>String
+        <input type="number" id="stringInput" value="1" min="1" max="6">
+      </label>
+      <label>Fret
+        <input type="number" id="fretInput" value="0" min="0" max="24">
+      </label>
+      <label>Note
+        <input type="text" id="noteInput" value="A" spellcheck="false" list="noteList">
+      </label>
+      <datalist id="noteList">
+        <option value="A"><option value="A#"><option value="B"><option value="C">
+        <option value="D"><option value="E"><option value="F"><option value="F#">
+        <option value="G"><option value="G#">
+      </datalist>
+    </div>
+    <div id="chordFields" style="display:none;">
+      <label>Chord name
+        <input type="text" id="chordNameInput" value="Amin" spellcheck="false" list="chordList">
+      </label>
+      <datalist id="chordList">
+        <option value="Amin"><option value="Cmaj"><option value="Dmaj">
+        <option value="Emaj"><option value="Gmaj">
+      </datalist>
+    </div>
+    <div class="actions">
+      <button type="button" id="undoBtn">Undo</button>
+      <button type="button" id="clearBtn">Clear</button>
+      <button type="button" id="downloadBtn" class="primary">Download XML</button>
+    </div>
+  </header>
+  <main>
+    <section class="stage">
+      <p class="hint" id="hint">Load a photo, pick a category, then drag a box. Coordinates are saved in the image’s own pixels.</p>
+      <canvas id="canvas" width="800" height="500"></canvas>
+      <ul class="boxes" id="boxList"></ul>
+    </section>
+    <aside>
+      <textarea id="output" readonly spellcheck="false"></textarea>
+    </aside>
+  </main>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const imageLoader = document.getElementById('imageLoader');
+    const folderInput = document.getElementById('folderInput');
+    const categorySelect = document.getElementById('categorySelect');
+    const fingerFields = document.getElementById('fingerFields');
+    const chordFields = document.getElementById('chordFields');
+    const output = document.getElementById('output');
+    const hint = document.getElementById('hint');
+    const boxList = document.getElementById('boxList');
+
+    const colors = {
+      finger: '#c4342d',
+      chord_shape: '#1f7a6b',
+      fretboard: '#c47b12'
+    };
+
+    const img = new Image();
+    let filename = 'image.jpeg';
+    let boxes = [];
+    let drawing = null;
+
+    categorySelect.addEventListener('change', syncFields);
+    folderInput.addEventListener('input', render);
+    document.getElementById('fingerIdInput').addEventListener('input', render);
+    document.getElementById('stringInput').addEventListener('input', render);
+    document.getElementById('fretInput').addEventListener('input', render);
+    document.getElementById('noteInput').addEventListener('input', render);
+    document.getElementById('chordNameInput').addEventListener('input', render);
+
+    function syncFields() {
+      const category = categorySelect.value;
+      fingerFields.style.display = category === 'finger' ? 'flex' : 'none';
+      chordFields.style.display = category === 'chord_shape' ? 'block' : 'none';
+    }
+
+    imageLoader.addEventListener('change', () => {
+      const file = imageLoader.files && imageLoader.files[0];
+      if (!file) return;
+      filename = file.name;
+      const reader = new FileReader();
+      reader.onload = () => {
+        img.onload = () => {
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          boxes = [];
+          drawing = null;
+          render();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    function pointFromEvent(event) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = Math.round((event.clientX - rect.left) * scaleX);
+      const y = Math.round((event.clientY - rect.top) * scaleY);
+      return {
+        x: Math.max(0, Math.min(canvas.width, x)),
+        y: Math.max(0, Math.min(canvas.height, y))
+      };
+    }
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      canvas.setPointerCapture(event.pointerId);
+      const start = pointFromEvent(event);
+      drawing = { startX: start.x, startY: start.y, x: start.x, y: start.y };
+      render();
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (!drawing) return;
+      const pos = pointFromEvent(event);
+      drawing.x = pos.x;
+      drawing.y = pos.y;
+      render();
+    });
+
+    function finishDrawing(event) {
+      if (!drawing) return;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      const pos = pointFromEvent(event);
+      const xmin = Math.min(drawing.startX, pos.x);
+      const ymin = Math.min(drawing.startY, pos.y);
+      const xmax = Math.max(drawing.startX, pos.x);
+      const ymax = Math.max(drawing.startY, pos.y);
+      drawing = null;
+      if (xmax - xmin >= 2 && ymax - ymin >= 2) {
+        boxes.push(boxFromForm(xmin, ymin, xmax, ymax));
+      }
+      render();
+    }
+
+    canvas.addEventListener('pointerup', finishDrawing);
+    canvas.addEventListener('pointercancel', (event) => {
+      drawing = null;
+      render();
+    });
+
+    function boxFromForm(xmin, ymin, xmax, ymax) {
+      const category = categorySelect.value;
+      const box = { category, xmin, ymin, xmax, ymax };
+      if (category === 'finger') {
+        box.finger_id = document.getElementById('fingerIdInput').value.trim();
+        box.string = document.getElementById('stringInput').value.trim();
+        box.fret = document.getElementById('fretInput').value.trim();
+        box.note = document.getElementById('noteInput').value.trim();
+      } else if (category === 'chord_shape') {
+        box.name = document.getElementById('chordNameInput').value.trim();
+      }
+      return box;
+    }
+
+    function labelFor(box) {
+      if (box.category === 'finger') {
+        return 'finger ' + box.finger_id + '  ' + box.note + '  s' + box.string + ' f' + box.fret;
+      }
+      if (box.category === 'chord_shape') return 'chord_shape  ' + box.name;
+      return 'fretboard';
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const scale = canvas.width / (canvas.getBoundingClientRect().width || canvas.width);
+      ctx.lineWidth = Math.max(1, 2 * scale);
+      ctx.font = 'bold ' + Math.max(14, 16 * scale) + 'px sans-serif';
+
+      const paint = (box, dashed) => {
+        const color = colors[box.category] || '#222';
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.setLineDash(dashed ? [8 * scale, 6 * scale] : []);
+        ctx.strokeRect(box.xmin, box.ymin, box.xmax - box.xmin, box.ymax - box.ymin);
+        const text = labelFor(box);
+        const pad = 4 * scale;
+        const width = ctx.measureText(text).width + pad * 2;
+        const height = 20 * scale;
+        const top = Math.max(0, box.ymin - height);
+        ctx.fillStyle = color;
+        ctx.fillRect(box.xmin, top, width, height);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(text, box.xmin + pad, top + height - 6 * scale);
+        ctx.restore();
+      };
+
+      boxes.forEach((box) => paint(box, false));
+      if (drawing) {
+        paint({
+          category: categorySelect.value,
+          xmin: Math.min(drawing.startX, drawing.x),
+          ymin: Math.min(drawing.startY, drawing.y),
+          xmax: Math.max(drawing.startX, drawing.x),
+          ymax: Math.max(drawing.startY, drawing.y),
+          finger_id: document.getElementById('fingerIdInput').value,
+          string: document.getElementById('stringInput').value,
+          fret: document.getElementById('fretInput').value,
+          note: document.getElementById('noteInput').value,
+          name: document.getElementById('chordNameInput').value
+        }, true);
+      }
+
+      output.value = buildXML();
+      hint.textContent = img.naturalWidth
+        ? filename + '  ·  ' + img.naturalWidth + '×' + img.naturalHeight + '  ·  ' + boxes.length + ' box' + (boxes.length === 1 ? '' : 'es')
+        : 'Load a photo, pick a category, then drag a box. Coordinates are saved in the image’s own pixels.';
+
+      boxList.replaceChildren(...boxes.map((box, index) => {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        const swatch = document.createElement('span');
+        swatch.className = 'swatch';
+        swatch.style.background = colors[box.category];
+        name.append(swatch, labelFor(box) + '  [' + box.xmin + ', ' + box.ymin + ', ' + box.xmax + ', ' + box.ymax + ']');
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', () => {
+          boxes.splice(index, 1);
+          render();
+        });
+        li.append(name, remove);
+        return li;
+      }));
+    }
+
+    function escapeXML(value) {
+      return String(value).replace(/[&<>'"]/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&apos;',
+        '"': '&quot;'
+      }[ch]));
+    }
+
+    function buildXML() {
+      const width = img.naturalWidth || 0;
+      const height = img.naturalHeight || 0;
+      const lines = [
+        '<?xml version="1.0"?>',
+        '<annotation>',
+        '<folder>' + escapeXML(folderInput.value.trim() || 'data') + '</folder>',
+        '<filename>' + escapeXML(filename) + '</filename>',
+        '<path/>',
+        '<source>',
+        '<database>Unknown</database>',
+        '</source>',
+        '<size>',
+        '<width>' + width + '</width>',
+        '<height>' + height + '</height>',
+        '<depth>3</depth>',
+        '</size>',
+        '<segmented>0</segmented>'
+      ];
+      boxes.forEach((box) => {
+        lines.push('<object>');
+        lines.push('<category>' + escapeXML(box.category) + '</category>');
+        if (box.category === 'finger') {
+          lines.push('<finger_id>' + escapeXML(box.finger_id) + '</finger_id>');
+          lines.push('<string>' + escapeXML(box.string) + '</string>');
+          lines.push('<fret>' + escapeXML(box.fret) + '</fret>');
+          lines.push('<note>' + escapeXML(box.note) + '</note>');
+        } else if (box.category === 'chord_shape') {
+          lines.push('<name>' + escapeXML(box.name) + '</name>');
+        }
+        lines.push('<pose>Unspecified</pose>');
+        lines.push('<truncated>0</truncated>');
+        lines.push('<occluded>0</occluded>');
+        lines.push('<difficult>0</difficult>');
+        lines.push('<bndbox>');
+        lines.push('<xmin>' + box.xmin + '</xmin>');
+        lines.push('<ymin>' + box.ymin + '</ymin>');
+        lines.push('<xmax>' + box.xmax + '</xmax>');
+        lines.push('<ymax>' + box.ymax + '</ymax>');
+        lines.push('</bndbox>');
+        lines.push('</object>');
+      });
+      lines.push('</annotation>');
+      return lines.join('\n');
+    }
+
+    function xmlFilename() {
+      const stem = filename.replace(/\.[^/.]+$/, '');
+      return (stem || 'annotation') + '.xml';
+    }
+
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      boxes.pop();
+      render();
+    });
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      boxes = [];
+      drawing = null;
+      render();
+    });
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      const blob = new Blob([output.value], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = xmlFilename();
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    window.addEventListener('keydown', (event) => {
+      const typing = event.target.matches('input, textarea, select');
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !typing) {
+        event.preventDefault();
+        boxes.pop();
+        render();
+      }
+      if (event.key === 'Escape' && drawing) {
+        drawing = null;
+        render();
+      }
+    });
+
+    syncFields();
+    render();
+  </script>
+</body>
+</html>
